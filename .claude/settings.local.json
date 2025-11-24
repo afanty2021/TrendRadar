@@ -1,0 +1,6 @@
+{
+  "disabledMcpjsonServers": [
+    "claude-flow@alpha",
+    "flow-nexus"
+  ]
+}
