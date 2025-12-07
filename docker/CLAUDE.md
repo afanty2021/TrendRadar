@@ -23,9 +23,10 @@ docker-compose up -d
 ```
 
 ### 入口文件
-- **Dockerfile**: 镜像构建配置
+- **Dockerfile**: 主应用镜像构建配置
+- **Dockerfile.mcp**: MCP服务独立镜像配置（v3.5.0新增）
 - **docker-compose.yml**: 服务编排配置
-- **docker-compose-build.yml**: 本地构建编排
+- **docker-compose-build.yml**: 本地构建编排（v3.5.0新增）
 - **entrypoint.sh**: 容器启动脚本
 - **manage.py**: 容器管理工具
 - **.env**: 环境变量配置
@@ -48,13 +49,34 @@ docker exec -it trend-radar python manage.py config
 
 # 显示输出文件
 docker exec -it trend-radar python manage.py files
+
+# v3.5.0 新增：启动 Web 服务器
+docker exec -it trend-radar python manage.py --webserver
+
+# v3.5.0 新增：启动 MCP 服务
+docker-compose -f docker-compose-build.yml up mcp
 ```
 
 ### 容器服务接口
-- **Web服务**: 无（纯后端服务）
+- **Web服务**: v3.5.0新增内置Web服务器（默认端口8080）
 - **MCP服务**: 可选启用HTTP模式，端口3333
 - **定时任务**: SuperCronic管理cron任务
 - **日志输出**: 标准输出和文件日志
+
+### MCP服务部署（v3.5.0新增）
+```bash
+# 方法一：使用独立镜像
+docker run -d --name trendradar-mcp \
+  -p 3333:3333 \
+  -v ./output:/app/output:ro \
+  wantcat/trendradar-mcp:latest
+
+# 方法二：使用docker-compose
+docker-compose -f docker-compose-build.yml up -d mcp
+
+# MCP服务API测试
+curl http://localhost:3333/tools/list
+```
 
 ## 关键依赖与配置
 
@@ -85,15 +107,25 @@ PUSH_WINDOW_ENABLED=true
 PUSH_WINDOW_START=08:00
 PUSH_WINDOW_END=22:00
 
-# 通知配置
-FEISHU_WEBHOOK_URL=your_webhook_url
-DINGTALK_WEBHOOK_URL=your_webhook_url
-WEWORK_WEBHOOK_URL=your_webhook_url
+# 通知配置（v3.5.0 支持多账号）
+FEISHU_WEBHOOK_URL=url1;url2;url3
+DINGTALK_WEBHOOK_URL=url1;url2
+WEWORK_WEBHOOK_URL=url1
+TELEGRAM_BOT_TOKEN=token1;token2;token3
+TELEGRAM_CHAT_ID=id1;id2;id3
 
 # 定时任务配置
 CRON_SCHEDULE=*/30 * * * *
 RUN_MODE=cron
 IMMEDIATE_RUN=true
+
+# v3.5.0 新增配置
+REVERSE_CONTENT_ORDER=false        # 内容顺序控制
+MAX_ACCOUNTS_PER_CHANNEL=3          # 每个渠道最大账号数
+ENABLE_WEBSERVER=false              # Web服务器开关
+WEBSERVER_PORT=8080                 # Web服务器端口
+MAX_NEWS_PER_PLATFORM=30            # 每个平台最大新闻数
+CRAWL_INTERVAL=30                   # 爬取间隔（分钟）
 ```
 
 ## 数据模型
@@ -201,12 +233,22 @@ python manage.py run
 
 | 文件路径 | 描述 | 重要性 |
 |---------|------|-------|
-| `docker/Dockerfile` | 镜像构建配置 | ⭐⭐⭐ |
+| `docker/Dockerfile` | 主应用镜像构建配置 | ⭐⭐⭐ |
+| `docker/Dockerfile.mcp` | MCP服务独立镜像配置（v3.5.0新增） | ⭐⭐⭐ |
 | `docker/docker-compose.yml` | 服务编排配置 | ⭐⭐⭐ |
+| `docker/docker-compose-build.yml` | 本地构建编排配置（v3.5.0新增） | ⭐⭐ |
 | `docker/.env` | 环境变量配置 | ⭐⭐ |
 | `docker/entrypoint.sh` | 容器启动脚本 | ⭐⭐ |
 | `docker/manage.py` | 容器管理工具 | ⭐⭐ |
 
 ## 变更记录 (Changelog)
+
+**2025-12-07**: v3.5.0重大更新
+- 新增Dockerfile.mcp独立MCP服务镜像
+- 新增docker-compose-build.yml构建编排
+- 新增Web服务器支持
+- 新增多账号推送支持
+- 更新环境变量配置项
+- 添加MCP服务HTTP模式部署说明
 
 **2025-11-24**: 创建Docker部署模块文档，详细说明容器化部署方案和管理工具

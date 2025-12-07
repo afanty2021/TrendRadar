@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-基于FastMCP 2.0框架构建的MCP(Model Context Protocol)服务器，提供13种智能分析工具，支持AI客户端通过自然语言与新闻数据进行深度交互分析。
+基于FastMCP 2.0框架构建的MCP(Model Context Protocol)服务器，提供16种智能分析工具，支持AI客户端通过自然语言与新闻数据进行深度交互分析。
 
 ## 入口与启动
 
@@ -41,7 +41,7 @@ start-http.bat   # Windows
 
 ## 对外接口
 
-### 13种分析工具详细说明
+### 16种分析工具详细说明
 
 #### 🔍 基础查询工具 (3种)
 
@@ -360,7 +360,7 @@ setup-windows-en.bat  # 英文版
 
 | 文件路径 | 描述 | 重要性 |
 |---------|------|-------|
-| `mcp_server/server.py` | MCP服务器主入口，注册所有13种工具 | ⭐⭐⭐ |
+| `mcp_server/server.py` | MCP服务器主入口，注册所有16种工具 | ⭐⭐⭐ |
 | `mcp_server/tools/analytics.py` | 高级分析工具，包含8种分析方法 | ⭐⭐⭐ |
 | `mcp_server/tools/data_query.py` | 基础查询工具，3种核心查询功能 | ⭐⭐⭐ |
 | `mcp_server/tools/search_tools.py` | 智能检索工具，支持模糊搜索和关联分析 | ⭐⭐⭐ |
@@ -372,5 +372,10 @@ setup-windows-en.bat  # 英文版
 | `README-MCP-FAQ.md` | MCP使用FAQ文档 | ⭐⭐ |
 
 ## 变更记录 (Changelog)
+
+**2025-12-07**: v3.5.0同步更新
+- 更新分析工具数量从13种到16种
+- 确认所有工具描述和功能说明准确
+- 保持文档与实际代码一致
 
 **2025-11-24**: 深度更新MCP服务器模块文档，详细说明13种分析工具的功能、参数和用途，添加部署配置、性能优化、错误处理等完整信息

@@ -2,6 +2,16 @@
 
 ## 📋 变更记录 (Changelog)
 
+**2025-12-07**: v3.5.0 同步更新，Docker 优先部署
+- 同步上游 v3.5.0 版本更新，包含多项重要功能改进
+- 新增多账号推送支持，所有推送渠道支持多个账号配置
+- 新增推送内容顺序可配置功能（`reverse_content_order`）
+- 新增全局过滤关键词功能（`[GLOBAL_FILTER]`）
+- 新增独立的 MCP 服务 Docker 镜像（`wantcat/trendradar-mcp`）
+- 新增内置 Web 服务器支持
+- 暂停 GitHub Actions 部署方式，强烈推荐 Docker 部署
+- 更新文档以反映最新的架构变化和部署建议
+
 **2025-11-24**: 深度初始化完成，覆盖率提升至98.1%
 - 新增MCP API参考文档 (`docs/MCP-API-Reference.md`)
 - 新增完整部署指南 (`docs/Deployment-Guide.md`)
@@ -14,6 +24,16 @@
 ## 🎯 项目愿景
 
 TrendRadar 是一个智能化的热点新闻聚合分析平台，旨在帮助用户从多个主流平台实时获取热点资讯，通过AI智能分析提供深度洞察，告别信息过载，只关注真正重要的内容。
+
+> **⚠️ 重要公告（2025年12月）**
+>
+> 由于 Fork 数量激增，GitHub 官方已联系项目作者。目前推荐的部署方式如下：
+>
+> - **🥇 强烈推荐**：Docker 部署（数据存本地，不受限制）
+> - **🥈 本地部署**：使用 UV 环境管理器
+> - **🚫 暂停服务**：Fork 部署、GitHub Actions、GitHub Pages
+
+> **当前版本**：v3.5.0（2025-12-07 发布）
 
 ## 🏗️ 架构总览
 
@@ -35,10 +55,11 @@ graph TD
     D --> D2["frequency_words.txt<br/>关键词配置"];
     E --> E1["Dockerfile<br/>容器化配置"];
     E --> E2["docker-compose<br/>编排配置"];
-    F --> F1["crawler.yml<br/>定时爬取任务"];
-    F --> F2["docker.yml<br/>镜像构建流程"];
+    E --> E3["Dockerfile.mcp<br/>MCP服务镜像"];
+    F --> F1["docker.yml<br/>镜像构建流程"];
     G --> G1["setup-*.sh/bat<br/>一键部署脚本"];
     G --> G2["start-*.sh/bat<br/>启动脚本"];
+    G --> G3["manage.py<br/>容器管理工具"];
     H --> H1["pyproject.toml<br/>Python项目配置"];
     H --> H2["requirements.txt<br/>依赖管理"];
 
@@ -58,8 +79,8 @@ graph TD
 | `main.py` | 核心爬虫引擎 | 多平台热点数据爬取、筛选、推送 | Python, Requests, YAML | [查看详情](main.py.md) |
 | `mcp_server/` | MCP AI分析服务 | 提供16种智能分析工具的MCP服务器 | FastMCP 2.0, WebSockets | [查看详情](mcp_server/CLAUDE.md) |
 | `config/` | 配置管理模块 | 系统配置、关键词配置、平台配置 | YAML, Txt | [查看详情](config/CLAUDE.md) |
-| `docker/` | 容器化部署 | Docker镜像构建、环境配置 | Docker, SuperCronic | [查看详情](docker/CLAUDE.md) |
-| `.github/` | CI/CD流程 | GitHub Actions自动化任务 | GitHub Actions | [查看详情](.github/CLAUDE.md) |
+| `docker/` | 容器化部署 | Docker镜像构建、环境配置、MCP服务 | Docker, SuperCronic | [查看详情](docker/CLAUDE.md) |
+| `.github/` | CI/CD流程 | GitHub Actions自动化任务（暂停） | GitHub Actions | [查看详情](.github/CLAUDE.md) |
 | `docs/` | 项目文档 | API参考、部署指南等详细文档 | Markdown | [API文档](docs/MCP-API-Reference.md) • [部署指南](docs/Deployment-Guide.md) |
 
 ### 📁 项目文件结构
@@ -91,15 +112,17 @@ TrendRadar/
 │   └── frequency_words.txt       # 个人关注词配置
 │
 ├── 🐳 容器化部署 (docker/)
-│   ├── Dockerfile                # Docker镜像配置
+│   ├── Dockerfile                # 主应用镜像配置
+│   ├── Dockerfile.mcp            # MCP服务镜像配置（新增）
 │   ├── docker-compose.yml        # 容器编排配置
-│   ├── .env                      # 环境变量配置
-│   └── manage.py                 # 容器管理脚本
+│   ├── docker-compose-build.yml  # 构建编排配置（新增）
+│   ├── .env                      # 环境变量配置（增强）
+│   ├── entrypoint.sh             # 容器启动脚本
+│   └── manage.py                 # 容器管理工具（增强）
 │
 ├── 🔄 CI/CD自动化 (.github/)
 │   └── workflows/
-│       ├── crawler.yml           # 定时爬取任务
-│       └── docker.yml            # 镜像构建流程
+│       └── docker.yml            # 镜像构建流程（crawler.yml已删除）
 │
 ├── 🚀 部署脚本
 │   ├── setup-mac.sh              # macOS一键部署
@@ -125,7 +148,48 @@ TrendRadar/
 
 ## ⚙️ 运行与开发
 
-### 🚀 一键部署（推荐）
+### 🐳 Docker 部署（强烈推荐）
+
+#### 快速启动
+```bash
+# 克隆项目
+git clone https://github.com/sansan0/TrendRadar.git
+cd TrendRadar
+
+# 启动新闻爬虫服务
+docker-compose up -d
+
+# 启动 MCP 分析服务（可选）
+docker-compose -f docker-compose-build.yml up mcp
+```
+
+#### 多容器部署（v3.5.0 新增）
+1. **新闻爬虫容器**：`wantcat/trendradar:latest`
+   - 自动爬取热点新闻
+   - 支持多平台推送
+   - 生成 HTML 报告
+
+2. **MCP 分析容器**：`wantcat/trendradar-mcp:latest`
+   - 提供 16 种 AI 分析工具
+   - 支持 STDIO/HTTP 模式
+   - 独立运行，按需启动
+
+#### 容器管理
+```bash
+# 查看日志
+docker-compose logs -f
+
+# 手动执行爬虫
+docker-compose exec main python main.py
+
+# 启动 Web 服务器
+docker-compose exec main python manage.py --webserver
+
+# 查看容器状态
+docker-compose ps
+```
+
+### 🚀 一键部署脚本
 
 #### macOS/Linux
 ```bash
@@ -230,6 +294,56 @@ setup-windows-en.bat
 - **类型提示**: 完整的类型注解支持
 - **文档字符串**: 详细的docstring说明
 
+## ⚙️ 配置说明（v3.5.0 更新）
+
+### 新增配置项
+
+```yaml
+# 报告配置
+reverse_content_order: false  # 是否反转内容显示顺序
+
+# 通知配置
+max_accounts_per_channel: 3  # 每个推送渠道最大账号数
+
+# 多账号推送支持
+webhooks:
+  feishu_url: "url1;url2;url3"  # 使用分号分隔多个URL
+  telegram_bot_token: "token1;token2;token3"  # 需与chat_id数量一致
+  telegram_chat_id: "id1;id2;id3"  # 每个token对应一个chat_id
+  # 其他平台类似...
+```
+
+### 全局过滤关键词
+
+在 `frequency_words.txt` 中使用 `[GLOBAL_FILTER]` 标记：
+
+```
+[GLOBAL_FILTER]
+广告
+推广
+spam关键词
+
+[KEYWORDS]
+人工智能
+区块链
+```
+
+### 环境变量覆盖
+
+`.env` 文件支持覆盖所有配置：
+
+```bash
+# 基础配置
+MAX_NEWS_PER_PLATFORM=30
+CRAWL_INTERVAL=30
+
+# v3.5.0 新增
+REVERSE_CONTENT_ORDER=true
+MAX_ACCOUNTS_PER_CHANNEL=5
+ENABLE_WEBSERVER=true
+WEBSERVER_PORT=8080
+```
+
 ## 🤖 AI 使用指引
 
 ### 16种AI分析工具
@@ -299,12 +413,19 @@ setup-windows-en.bat
 
 ## 📈 项目统计
 
+- **当前版本**: v3.5.0
 - **代码覆盖率**: 98.1% (51/52文件)
 - **API接口**: 16种分析工具
-- **部署方式**: 8种部署场景
+- **部署方式**:
+  - 🥇 Docker 部署（强烈推荐）
+  - 🥈 本地 UV 部署
+  - 🚫 GitHub Actions（暂停）
+- **Docker 镜像**:
+  - `wantcat/trendradar:latest`（主应用）
+  - `wantcat/trendradar-mcp:latest`（MCP 服务）
 - **支持平台**: 5个AI客户端
 - **文档完整性**: 100% API文档化
 
 ---
 
-*最后更新: 2025-11-24 | 文档版本: v2.0*
+*最后更新: 2025-12-07 | 文档版本: v3.0*
