@@ -1,0 +1,60 @@
+# 博主监控配置文件
+# 详细说明请参考 README-BloggerMonitor.md
+
+# 监控目标列表
+monitors:
+  # 微博用户监控
+  - platform: weibo
+    user_id: "1739928273"  # 替换为实际的微博数字ID
+    keywords:               # 该用户的特定关键词（可选）
+      - "人工智能"
+      - "AI"
+      - "大模型"
+    name: "某技术博主"       # 用户备注（可选）
+
+  # 知乎用户监控
+  - platform: zhihu
+    user_id: "victor-wye"    # 可以是用户名或ID
+    keywords:               # 该用户的特定关键词（可选）
+      - "创业"
+      - "技术"
+      - "产品"
+    name: "某知乎大V"        # 用户备注（可选）
+
+  # 可以添加更多监控目标
+  # - platform: weibo
+  #   user_id: "1234567890"
+  #   keywords: ["投资", "股市"]
+  #   name: "某投资博主"
+
+# 全局关键词（所有监控都会匹配）
+keywords:
+  - "热点"
+  - "新闻"
+  - "重要"
+
+# 通知配置
+notification:
+  enable: true              # 是否启用通知
+  channels:                 # 通知渠道
+    - console               # 控制台输出（始终启用）
+    # - file                # 保存到文件（自动启用）
+    # - email               # 邮件通知（需要额外配置）
+    # - wechat              # 微信通知（需要额外配置）
+    # - telegram            # Telegram通知（需要额外配置）
+
+# 监控参数
+check_interval: 300         # 检查间隔（秒），默认5分钟
+max_posts_per_check: 10     # 每次检查最多获取的帖子数
+
+# RSSHub 配置（可选）
+rsshub:
+  # 公共 RSSHub 实例
+  public_url: "https://rsshub.app"
+  # 如果有自己的 RSSHub 实例，可以替换
+  # private_url: "http://your-rsshub-domain.com"
+
+# 缓存配置
+cache:
+  expire_days: 7            # 缓存过期天数
+  max_cache_size: 10000     # 最大缓存条目数
