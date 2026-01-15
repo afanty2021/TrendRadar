@@ -100,6 +100,26 @@ class AppContext:
         """获取平台ID列表"""
         return [p["id"] for p in self.platforms]
 
+    @property
+    def rss_config(self) -> Dict:
+        """获取 RSS 配置"""
+        return self.config.get("RSS", {})
+
+    @property
+    def rss_enabled(self) -> bool:
+        """RSS 是否启用"""
+        return self.rss_config.get("ENABLED", False)
+
+    @property
+    def rss_feeds(self) -> List[Dict]:
+        """获取 RSS 源列表"""
+        return self.rss_config.get("FEEDS", [])
+
+    @property
+    def display_mode(self) -> str:
+        """获取显示模式 (keyword | platform)"""
+        return self.config.get("DISPLAY_MODE", "keyword")
+
     # === 时间操作 ===
 
     def get_time(self) -> datetime:
@@ -265,6 +285,8 @@ class AppContext:
         mode: str = "daily",
         is_daily_summary: bool = False,
         update_info: Optional[Dict] = None,
+        rss_items: Optional[List[Dict]] = None,
+        rss_new_items: Optional[List[Dict]] = None,
     ) -> str:
         """生成HTML报告"""
         return generate_html_report(
@@ -280,7 +302,7 @@ class AppContext:
             output_dir="output",
             date_folder=self.format_date(),
             time_filename=self.format_time(),
-            render_html_func=lambda *args, **kwargs: self.render_html(*args, **kwargs),
+            render_html_func=lambda *args, **kwargs: self.render_html(*args, rss_items=rss_items, rss_new_items=rss_new_items, **kwargs),
             matches_word_groups_func=self.matches_word_groups,
             load_frequency_words_func=self.load_frequency_words,
             enable_index_copy=True,
@@ -293,6 +315,8 @@ class AppContext:
         is_daily_summary: bool = False,
         mode: str = "daily",
         update_info: Optional[Dict] = None,
+        rss_items: Optional[List[Dict]] = None,
+        rss_new_items: Optional[List[Dict]] = None,
     ) -> str:
         """渲染HTML内容"""
         return render_html_content(
@@ -303,6 +327,9 @@ class AppContext:
             update_info=update_info,
             reverse_content_order=self.config.get("REVERSE_CONTENT_ORDER", False),
             get_time_func=self.get_time,
+            rss_items=rss_items,
+            rss_new_items=rss_new_items,
+            display_mode=self.display_mode,
         )
 
     # === 通知内容渲染 ===
@@ -345,8 +372,31 @@ class AppContext:
         update_info: Optional[Dict] = None,
         max_bytes: Optional[int] = None,
         mode: str = "daily",
+        rss_items: Optional[list] = None,
+        rss_new_items: Optional[list] = None,
+        ai_content: Optional[str] = None,
+        standalone_data: Optional[Dict] = None,
+        ai_stats: Optional[Dict] = None,
+        report_type: str = "热点分析报告",
     ) -> List[str]:
-        """分批处理消息内容"""
+        """分批处理消息内容（支持热榜+RSS合并+AI分析+独立展示区）
+
+        Args:
+            report_data: 报告数据
+            format_type: 格式类型
+            update_info: 更新信息
+            max_bytes: 最大字节数
+            mode: 报告模式
+            rss_items: RSS 统计条目列表
+            rss_new_items: RSS 新增条目列表
+            ai_content: AI 分析内容（已渲染的字符串）
+            standalone_data: 独立展示区数据
+            ai_stats: AI 分析统计数据
+            report_type: 报告类型
+
+        Returns:
+            分批后的消息内容列表
+        """
         return split_content_into_batches(
             report_data=report_data,
             format_type=format_type,
@@ -361,6 +411,15 @@ class AppContext:
             feishu_separator=self.config.get("FEISHU_MESSAGE_SEPARATOR", "---"),
             reverse_content_order=self.config.get("REVERSE_CONTENT_ORDER", False),
             get_time_func=self.get_time,
+            rss_items=rss_items,
+            rss_new_items=rss_new_items,
+            timezone=self.config.get("TIMEZONE", "Asia/Shanghai"),
+            display_mode=self.display_mode,
+            ai_content=ai_content,
+            standalone_data=standalone_data,
+            rank_threshold=self.rank_threshold,
+            ai_stats=ai_stats,
+            report_type=report_type,
         )
 
     # === 通知发送 ===

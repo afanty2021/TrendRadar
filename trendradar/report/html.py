@@ -6,9 +6,10 @@ HTML 报告渲染模块
 """
 
 from datetime import datetime
-from typing import Dict, Optional, Callable
+from typing import Dict, List, Optional, Callable
 
 from trendradar.report.helpers import html_escape
+from trendradar.utils.time import convert_time_for_display
 
 
 def render_html_content(
@@ -20,6 +21,10 @@ def render_html_content(
     *,
     reverse_content_order: bool = False,
     get_time_func: Optional[Callable[[], datetime]] = None,
+    rss_items: Optional[List[Dict]] = None,
+    rss_new_items: Optional[List[Dict]] = None,
+    display_mode: str = "keyword",
+    standalone_data: Optional[Dict] = None,
 ) -> str:
     """渲染HTML内容
 
@@ -31,6 +36,10 @@ def render_html_content(
         update_info: 更新信息（可选）
         reverse_content_order: 是否反转内容顺序（新增热点在前）
         get_time_func: 获取当前时间的函数（可选，默认使用 datetime.now）
+        rss_items: RSS 统计条目列表（可选）
+        rss_new_items: RSS 新增条目列表（可选）
+        display_mode: 显示模式 ("keyword"=按关键词分组, "platform"=按平台分组)
+        standalone_data: 独立展示区数据（可选），包含 platforms 和 rss_feeds
 
     Returns:
         渲染后的 HTML 字符串
@@ -255,6 +264,15 @@ def render_html_content(
                 font-weight: 500;
             }
 
+            .keyword-tag {
+                color: #2563eb;
+                font-size: 12px;
+                font-weight: 500;
+                background: #eff6ff;
+                padding: 2px 6px;
+                border-radius: 4px;
+            }
+
             .rank-num {
                 color: #fff;
                 background: #6b7280;
@@ -464,6 +482,173 @@ def render_html_content(
                     width: 100%;
                 }
             }
+
+            /* RSS 订阅内容样式 */
+            .rss-section {
+                margin-top: 32px;
+                padding-top: 24px;
+                border-top: 2px solid #e5e7eb;
+            }
+
+            .rss-section-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 20px;
+            }
+
+            .rss-section-title {
+                font-size: 18px;
+                font-weight: 600;
+                color: #059669;
+            }
+
+            .rss-section-count {
+                color: #6b7280;
+                font-size: 14px;
+            }
+
+            .feed-group {
+                margin-bottom: 24px;
+            }
+
+            .feed-group:last-child {
+                margin-bottom: 0;
+            }
+
+            .feed-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 12px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid #10b981;
+            }
+
+            .feed-name {
+                font-size: 15px;
+                font-weight: 600;
+                color: #059669;
+            }
+
+            .feed-count {
+                color: #666;
+                font-size: 13px;
+                font-weight: 500;
+            }
+
+            .rss-item {
+                margin-bottom: 12px;
+                padding: 14px;
+                background: #f0fdf4;
+                border-radius: 8px;
+                border-left: 3px solid #10b981;
+            }
+
+            .rss-item:last-child {
+                margin-bottom: 0;
+            }
+
+            .rss-meta {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 6px;
+                flex-wrap: wrap;
+            }
+
+            .rss-time {
+                color: #6b7280;
+                font-size: 12px;
+            }
+
+            .rss-author {
+                color: #059669;
+                font-size: 12px;
+                font-weight: 500;
+            }
+
+            .rss-title {
+                font-size: 14px;
+                line-height: 1.5;
+                margin-bottom: 6px;
+            }
+
+            .rss-link {
+                color: #1f2937;
+                text-decoration: none;
+                font-weight: 500;
+            }
+
+            .rss-link:hover {
+                color: #059669;
+                text-decoration: underline;
+            }
+
+            .rss-summary {
+                font-size: 13px;
+                color: #6b7280;
+                line-height: 1.5;
+                margin: 0;
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+            }
+
+            /* 独立展示区样式 - 复用热点词汇统计区样式 */
+            .standalone-section {
+                margin-top: 32px;
+                padding-top: 24px;
+                border-top: 2px solid #e5e7eb;
+            }
+
+            .standalone-section-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 20px;
+            }
+
+            .standalone-section-title {
+                font-size: 18px;
+                font-weight: 600;
+                color: #4f46e5;
+            }
+
+            .standalone-section-count {
+                color: #6b7280;
+                font-size: 14px;
+            }
+
+            .standalone-group {
+                margin-bottom: 40px;
+            }
+
+            .standalone-group:last-child {
+                margin-bottom: 0;
+            }
+
+            .standalone-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 20px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+
+            .standalone-name {
+                font-size: 17px;
+                font-weight: 600;
+                color: #1a1a1a;
+            }
+
+            .standalone-count {
+                color: #666;
+                font-size: 13px;
+                font-weight: 500;
+            }
         </style>
     </head>
     <body>
@@ -578,8 +763,17 @@ def render_html_content(
                     <div class="news-item {new_class}">
                         <div class="news-number">{j}</div>
                         <div class="news-content">
-                            <div class="news-header">
-                                <span class="source-name">{html_escape(title_data["source_name"])}</span>"""
+                            <div class="news-header">"""
+
+                # 根据 display_mode 决定显示来源还是关键词
+                if display_mode == "keyword":
+                    # keyword 模式：显示来源
+                    stats_html += f'<span class="source-name">{html_escape(title_data["source_name"])}</span>'
+                else:
+                    # platform 模式：显示关键词
+                    matched_keyword = title_data.get("matched_keyword", "")
+                    if matched_keyword:
+                        stats_html += f'<span class="keyword-tag">[{html_escape(matched_keyword)}]</span>'
 
                 # 处理排名显示
                 ranks = title_data.get("ranks", [])
@@ -706,13 +900,346 @@ def render_html_content(
         new_titles_html += """
                 </div>"""
 
-    # 根据配置决定内容顺序
+    # 生成 RSS 统计内容
+    def render_rss_stats_html(stats: List[Dict], title: str = "RSS 订阅更新") -> str:
+        """渲染 RSS 统计区块 HTML
+
+        Args:
+            stats: RSS 分组统计列表，格式与热榜一致：
+                [
+                    {
+                        "word": "关键词",
+                        "count": 5,
+                        "titles": [
+                            {
+                                "title": "标题",
+                                "source_name": "Feed 名称",
+                                "time_display": "12-29 08:20",
+                                "url": "...",
+                                "is_new": True/False
+                            }
+                        ]
+                    }
+                ]
+            title: 区块标题
+
+        Returns:
+            渲染后的 HTML 字符串
+        """
+        if not stats:
+            return ""
+
+        # 计算总条目数
+        total_count = sum(stat.get("count", 0) for stat in stats)
+        if total_count == 0:
+            return ""
+
+        rss_html = f"""
+                <div class="rss-section">
+                    <div class="rss-section-header">
+                        <div class="rss-section-title">{title}</div>
+                        <div class="rss-section-count">{total_count} 条</div>
+                    </div>"""
+
+        # 按关键词分组渲染（与热榜格式一致）
+        for stat in stats:
+            keyword = stat.get("word", "")
+            titles = stat.get("titles", [])
+            if not titles:
+                continue
+
+            keyword_count = len(titles)
+
+            rss_html += f"""
+                    <div class="feed-group">
+                        <div class="feed-header">
+                            <div class="feed-name">{html_escape(keyword)}</div>
+                            <div class="feed-count">{keyword_count} 条</div>
+                        </div>"""
+
+            for title_data in titles:
+                item_title = title_data.get("title", "")
+                url = title_data.get("url", "")
+                time_display = title_data.get("time_display", "")
+                source_name = title_data.get("source_name", "")
+                is_new = title_data.get("is_new", False)
+
+                rss_html += """
+                        <div class="rss-item">
+                            <div class="rss-meta">"""
+
+                if time_display:
+                    rss_html += f'<span class="rss-time">{html_escape(time_display)}</span>'
+
+                if source_name:
+                    rss_html += f'<span class="rss-author">{html_escape(source_name)}</span>'
+
+                if is_new:
+                    rss_html += '<span class="rss-author" style="color: #dc2626;">NEW</span>'
+
+                rss_html += """
+                            </div>
+                            <div class="rss-title">"""
+
+                escaped_title = html_escape(item_title)
+                if url:
+                    escaped_url = html_escape(url)
+                    rss_html += f'<a href="{escaped_url}" target="_blank" class="rss-link">{escaped_title}</a>'
+                else:
+                    rss_html += escaped_title
+
+                rss_html += """
+                            </div>
+                        </div>"""
+
+            rss_html += """
+                    </div>"""
+
+        rss_html += """
+                </div>"""
+        return rss_html
+
+    # 生成独立展示区内容
+    def render_standalone_html(data: Optional[Dict]) -> str:
+        """渲染独立展示区 HTML（复用热点词汇统计区样式）
+
+        Args:
+            data: 独立展示数据，格式：
+                {
+                    "platforms": [
+                        {
+                            "id": "zhihu",
+                            "name": "知乎热榜",
+                            "items": [
+                                {
+                                    "title": "标题",
+                                    "url": "链接",
+                                    "rank": 1,
+                                    "ranks": [1, 2, 1],
+                                    "first_time": "08:00",
+                                    "last_time": "12:30",
+                                    "count": 3,
+                                }
+                            ]
+                        }
+                    ],
+                    "rss_feeds": [
+                        {
+                            "id": "hacker-news",
+                            "name": "Hacker News",
+                            "items": [
+                                {
+                                    "title": "标题",
+                                    "url": "链接",
+                                    "published_at": "2025-01-07T08:00:00",
+                                    "author": "作者",
+                                }
+                            ]
+                        }
+                    ]
+                }
+
+        Returns:
+            渲染后的 HTML 字符串
+        """
+        if not data:
+            return ""
+
+        platforms = data.get("platforms", [])
+        rss_feeds = data.get("rss_feeds", [])
+
+        if not platforms and not rss_feeds:
+            return ""
+
+        # 计算总条目数
+        total_platform_items = sum(len(p.get("items", [])) for p in platforms)
+        total_rss_items = sum(len(f.get("items", [])) for f in rss_feeds)
+        total_count = total_platform_items + total_rss_items
+
+        if total_count == 0:
+            return ""
+
+        standalone_html = f"""
+                <div class="standalone-section">
+                    <div class="standalone-section-header">
+                        <div class="standalone-section-title">📋 独立展示区</div>
+                        <div class="standalone-section-count">{total_count} 条</div>
+                    </div>"""
+
+        # 渲染热榜平台（复用 word-group 结构）
+        for platform in platforms:
+            platform_name = platform.get("name", platform.get("id", ""))
+            items = platform.get("items", [])
+            if not items:
+                continue
+
+            standalone_html += f"""
+                    <div class="standalone-group">
+                        <div class="standalone-header">
+                            <div class="standalone-name">{html_escape(platform_name)}</div>
+                            <div class="standalone-count">{len(items)} 条</div>
+                        </div>"""
+
+            # 渲染每个条目（复用 news-item 结构）
+            for j, item in enumerate(items, 1):
+                title = item.get("title", "")
+                url = item.get("url", "") or item.get("mobileUrl", "")
+                rank = item.get("rank", 0)
+                ranks = item.get("ranks", [])
+                first_time = item.get("first_time", "")
+                last_time = item.get("last_time", "")
+                count = item.get("count", 1)
+
+                standalone_html += f"""
+                        <div class="news-item">
+                            <div class="news-number">{j}</div>
+                            <div class="news-content">
+                                <div class="news-header">"""
+
+                # 排名显示（复用 rank-num 样式，无 # 前缀）
+                if ranks:
+                    min_rank = min(ranks)
+                    max_rank = max(ranks)
+
+                    # 确定排名等级
+                    if min_rank <= 3:
+                        rank_class = "top"
+                    elif min_rank <= 10:
+                        rank_class = "high"
+                    else:
+                        rank_class = ""
+
+                    if min_rank == max_rank:
+                        rank_text = str(min_rank)
+                    else:
+                        rank_text = f"{min_rank}-{max_rank}"
+
+                    standalone_html += f'<span class="rank-num {rank_class}">{rank_text}</span>'
+                elif rank > 0:
+                    if rank <= 3:
+                        rank_class = "top"
+                    elif rank <= 10:
+                        rank_class = "high"
+                    else:
+                        rank_class = ""
+                    standalone_html += f'<span class="rank-num {rank_class}">{rank}</span>'
+
+                # 时间显示（复用 time-info 样式，将 HH-MM 转换为 HH:MM）
+                if first_time and last_time and first_time != last_time:
+                    first_time_display = convert_time_for_display(first_time)
+                    last_time_display = convert_time_for_display(last_time)
+                    standalone_html += f'<span class="time-info">{html_escape(first_time_display)}~{html_escape(last_time_display)}</span>'
+                elif first_time:
+                    first_time_display = convert_time_for_display(first_time)
+                    standalone_html += f'<span class="time-info">{html_escape(first_time_display)}</span>'
+
+                # 出现次数（复用 count-info 样式）
+                if count > 1:
+                    standalone_html += f'<span class="count-info">{count}次</span>'
+
+                standalone_html += """
+                                </div>
+                                <div class="news-title">"""
+
+                # 标题和链接（复用 news-link 样式）
+                escaped_title = html_escape(title)
+                if url:
+                    escaped_url = html_escape(url)
+                    standalone_html += f'<a href="{escaped_url}" target="_blank" class="news-link">{escaped_title}</a>'
+                else:
+                    standalone_html += escaped_title
+
+                standalone_html += """
+                                </div>
+                            </div>
+                        </div>"""
+
+            standalone_html += """
+                    </div>"""
+
+        # 渲染 RSS 源（复用相同结构）
+        for feed in rss_feeds:
+            feed_name = feed.get("name", feed.get("id", ""))
+            items = feed.get("items", [])
+            if not items:
+                continue
+
+            standalone_html += f"""
+                    <div class="standalone-group">
+                        <div class="standalone-header">
+                            <div class="standalone-name">{html_escape(feed_name)}</div>
+                            <div class="standalone-count">{len(items)} 条</div>
+                        </div>"""
+
+            for j, item in enumerate(items, 1):
+                title = item.get("title", "")
+                url = item.get("url", "")
+                published_at = item.get("published_at", "")
+                author = item.get("author", "")
+
+                standalone_html += f"""
+                        <div class="news-item">
+                            <div class="news-number">{j}</div>
+                            <div class="news-content">
+                                <div class="news-header">"""
+
+                # 时间显示（格式化 ISO 时间）
+                if published_at:
+                    try:
+                        from datetime import datetime as dt
+                        if "T" in published_at:
+                            dt_obj = dt.fromisoformat(published_at.replace("Z", "+00:00"))
+                            time_display = dt_obj.strftime("%m-%d %H:%M")
+                        else:
+                            time_display = published_at
+                    except:
+                        time_display = published_at
+
+                    standalone_html += f'<span class="time-info">{html_escape(time_display)}</span>'
+
+                # 作者显示
+                if author:
+                    standalone_html += f'<span class="source-name">{html_escape(author)}</span>'
+
+                standalone_html += """
+                                </div>
+                                <div class="news-title">"""
+
+                escaped_title = html_escape(title)
+                if url:
+                    escaped_url = html_escape(url)
+                    standalone_html += f'<a href="{escaped_url}" target="_blank" class="news-link">{escaped_title}</a>'
+                else:
+                    standalone_html += escaped_title
+
+                standalone_html += """
+                                </div>
+                            </div>
+                        </div>"""
+
+            standalone_html += """
+                    </div>"""
+
+        standalone_html += """
+                </div>"""
+        return standalone_html
+
+    # 生成 RSS 统计和新增 HTML
+    rss_stats_html = render_rss_stats_html(rss_items, "RSS 订阅更新") if rss_items else ""
+    rss_new_html = render_rss_stats_html(rss_new_items, "RSS 新增更新") if rss_new_items else ""
+
+    # 生成独立展示区 HTML
+    standalone_html = render_standalone_html(standalone_data)
+
+    # 根据配置决定内容顺序（与推送逻辑一致）
     if reverse_content_order:
-        # 新增热点在前，热点词汇统计在后
-        html += new_titles_html + stats_html
+        # 新增在前，统计在后
+        # 顺序：热榜新增 → RSS新增 → 热榜统计 → RSS统计 → 独立展示区
+        html += new_titles_html + rss_new_html + stats_html + rss_stats_html + standalone_html
     else:
-        # 默认：热点词汇统计在前，新增热点在后
-        html += stats_html + new_titles_html
+        # 默认：统计在前，新增在后
+        # 顺序：热榜统计 → RSS统计 → 热榜新增 → RSS新增 → 独立展示区
+        html += stats_html + rss_stats_html + new_titles_html + rss_new_html + standalone_html
 
     html += """
             </div>
