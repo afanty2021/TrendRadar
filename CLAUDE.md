@@ -1,8 +1,9 @@
 # TrendRadar - AI 上下文文档
 
-> **最后更新**：2026-01-15
-> **项目版本**：5.0.0
+> **最后更新**：2026-01-31 15:19:33
+> **项目版本**：5.5.2
 > **文档覆盖率**：100%
+> **扫描时间**：2026-01-31
 
 ## 项目概述
 
@@ -39,6 +40,8 @@ fastmcp = ">=2.12.0,<2.14.0"    # MCP 协议支持
 websockets = ">=13.0,<14.0"     # WebSocket 通信
 feedparser = ">=6.0.0,<7.0.0"   # RSS 解析
 boto3 = ">=1.35.0,<2.0.0"       # S3 兼容存储
+litellm = ">=1.57.0,<2.0.0"     # AI 模型统一接口
+tenacity = "==8.5.0"            # 重试机制
 ```
 
 ### 架构特点
@@ -48,93 +51,56 @@ boto3 = ">=1.35.0,<2.0.0"       # S3 兼容存储
 - **多存储后端**：本地 SQLite / 远程 S3 兼容存储
 - **Docker 化**：完整的容器化部署方案
 
-## 项目结构
+## 模块结构图
 
+```mermaid
+graph TD
+    A["(根) TrendRadar"] --> B["trendradar/"];
+    A --> C["mcp_server/"];
+    A --> D["config/"];
+    A --> E["docker/"];
+    A --> F[".github/"];
+
+    B --> B1["ai/"];
+    B --> B2["core/"];
+    B --> B3["crawler/"];
+    B --> B4["notification/"];
+    B --> B5["report/"];
+    B --> B6["storage/"];
+    B --> B7["utils/"];
+
+    C --> C1["tools/"];
+    C --> C2["services/"];
+    C --> C3["utils/"];
+
+    B3 --> B3a["rss/"];
+    B5 --> B5a["rss_html.py"];
+
+    click B "./trendradar/CLAUDE.md" "查看 trendradar 模块文档"
+    click B1 "./trendradar/ai/CLAUDE.md" "查看 ai 模块文档"
+    click B2 "./trendradar/core/CLAUDE.md" "查看 core 模块文档"
+    click B3 "./trendradar/crawler/CLAUDE.md" "查看 crawler 模块文档"
+    click B4 "./trendradar/notification/CLAUDE.md" "查看 notification 模块文档"
+    click B5 "./trendradar/report/CLAUDE.md" "查看 report 模块文档"
+    click B6 "./trendradar/storage/CLAUDE.md" "查看 storage 模块文档"
+    click B7 "./trendradar/utils/CLAUDE.md" "查看 utils 模块文档"
+    click C "./mcp_server/CLAUDE.md" "查看 mcp_server 模块文档"
+    click C1 "./mcp_server/tools/CLAUDE.md" "查看 MCP 工具模块文档"
 ```
-TrendRadar/
-├── trendradar/                 # 核心应用代码
-│   ├── __init__.py            # 包初始化，版本定义
-│   ├── __main__.py            # 命令行入口
-│   ├── context.py             # 应用上下文，模块协调
-│   ├── ai/                    # AI 分析模块
-│   │   ├── analyzer.py        # AI 分析器
-│   │   └── formatter.py       # 结果格式化
-│   ├── core/                  # 核心分析模块
-│   │   ├── analyzer.py        # 统计分析器
-│   │   ├── config.py          # 配置管理
-│   │   ├── data.py            # 数据模型
-│   │   ├── frequency.py       # 频次统计
-│   │   └── loader.py          # 配置加载
-│   ├── crawler/               # 数据采集模块
-│   │   ├── fetcher.py         # 热榜爬虫
-│   │   └── rss/               # RSS 订阅
-│   │       ├── fetcher.py     # RSS 爬虫
-│   │       └── parser.py      # RSS 解析
-│   ├── notification/          # 通知推送模块
-│   │   ├── dispatcher.py      # 推送调度器
-│   │   ├── batch.py           # 消息分批
-│   │   ├── formatters.py      # 消息格式化
-│   │   ├── push_manager.py    # 推送管理
-│   │   ├── renderer.py        # 内容渲染
-│   │   ├── senders.py         # 发送器实现
-│   │   └── splitter.py        # 消息分割
-│   ├── report/                # 报告生成模块
-│   │   ├── generator.py       # 报告生成器
-│   │   ├── formatter.py       # 格式化工具
-│   │   ├── helpers.py         # 辅助函数
-│   │   ├── html.py            # HTML 报告
-│   │   └── rss_html.py        # RSS HTML 报告
-│   ├── storage/               # 存储管理模块
-│   │   ├── manager.py         # 存储管理器
-│   │   ├── base.py            # 基础接口
-│   │   ├── local.py           # 本地存储
-│   │   └── remote.py          # 远程存储
-│   └── utils/                 # 工具函数
-│       ├── time.py            # 时间处理
-│       └── url.py             # URL 处理
-│
-├── mcp_server/                # MCP 服务器
-│   ├── server.py              # MCP 服务主入口
-│   ├── services/              # 服务层
-│   │   ├── cache_service.py   # 缓存服务
-│   │   ├── data_service.py    # 数据服务
-│   │   └── parser_service.py  # 解析服务
-│   ├── tools/                 # MCP 工具集
-│   │   ├── analytics.py       # 分析工具
-│   │   ├── config_mgmt.py     # 配置管理工具
-│   │   ├── data_query.py      # 数据查询工具
-│   │   ├── search_tools.py    # 搜索工具
-│   │   ├── storage_sync.py    # 存储同步工具
-│   │   └── system.py          # 系统工具
-│   └── utils/                 # 工具函数
-│       ├── date_parser.py     # 日期解析
-│       ├── errors.py          # 错误处理
-│       └── validators.py      # 数据验证
-│
-├── config/                    # 配置文件
-│   ├── config.yaml            # 主配置文件
-│   ├── frequency_words.txt    # 关键词配置
-│   └── ai_analysis_prompt.txt # AI 分析提示词
-│
-├── docker/                    # Docker 相关
-│   ├── Dockerfile             # 镜像构建
-│   ├── docker-compose.yml     # 本地部署
-│   ├── docker-compose-build.yml # 构建部署
-│   └── manage.py              # 容器管理脚本
-│
-├── output/                    # 数据输出目录
-│   ├── html/                  # HTML 报告
-│   ├── txt/                   # TXT 快照
-│   └── db/                    # SQLite 数据库
-│
-├── .github/                   # GitHub Actions
-│   └── workflows/             # 自动化工作流
-│
-├── pyproject.toml             # 项目配置
-├── requirements.txt           # 依赖列表
-├── setup-*.sh                 # 安装脚本
-└── start-*.sh                 # 启动脚本
-```
+
+## 模块索引
+
+| 模块路径 | 主要语言 | 一句话职责 | 文档状态 |
+|---------|---------|------------|---------|
+| `trendradar/` | Python | 核心应用逻辑 | [CLAUDE.md](./trendradar/CLAUDE.md) |
+| `trendradar/ai/` | Python | AI 分析与翻译 | [CLAUDE.md](./trendradar/ai/CLAUDE.md) |
+| `trendradar/core/` | Python | 配置管理与分析引擎 | [CLAUDE.md](./trendradar/core/CLAUDE.md) |
+| `trendradar/crawler/` | Python | 数据采集（热榜+RSS） | [CLAUDE.md](./trendradar/crawler/CLAUDE.md) |
+| `trendradar/notification/` | Python | 多渠道通知推送 | [CLAUDE.md](./trendradar/notification/CLAUDE.md) |
+| `trendradar/report/` | Python | 报告生成与渲染 | [CLAUDE.md](./trendradar/report/CLAUDE.md) |
+| `trendradar/storage/` | Python | 存储管理（本地/远程） | [CLAUDE.md](./trendradar/storage/CLAUDE.md) |
+| `trendradar/utils/` | Python | 工具函数 | [CLAUDE.md](./trendradar/utils/CLAUDE.md) |
+| `mcp_server/` | Python | MCP 协议服务器 | [CLAUDE.md](./mcp_server/CLAUDE.md) |
 
 ## 核心功能模块
 
@@ -218,15 +184,22 @@ TrendRadar/
 |---------|---------|---------|
 | 数据查询 | `get_latest_news` | 获取最新新闻 |
 | | `get_news_by_date` | 按日期查询新闻 |
+| | `get_trending_topics` | 获取趋势话题 |
 | | `list_available_dates` | 列出可用日期 |
+| | `get_latest_rss` | 获取最新 RSS 订阅数据 |
+| | `search_rss` | 搜索 RSS 数据 |
+| | `get_rss_feeds_status` | 获取 RSS 源状态 |
 | 分析工具 | `analyze_topic_trend` | 话题趋势分析 |
-| | `analyze_sentiment` | 情感分析 |
-| | `analyze_data_insights` | 数据洞察 |
-| | `find_similar_news` | 相似新闻查找 |
+| | `analyze_data_insights` | 数据洞察分析 |
+| | `analyze_sentiment` | 情感倾向分析 |
+| | `aggregate_news` | 跨平台新闻聚合 |
+| | `compare_periods` | 时期对比分析 |
+| | `generate_summary_report` | 每日/每周摘要生成 |
+| | `find_similar_news` | 相关新闻查找 |
 | 搜索工具 | `search_news` | 统一新闻搜索 |
-| | `search_related_news_history` | 相关新闻历史搜索 |
 | 系统工具 | `get_system_status` | 系统状态 |
 | | `get_current_config` | 当前配置 |
+| | `check_version` | 检查版本更新 |
 | | `trigger_crawl` | 触发爬取 |
 | 存储工具 | `sync_from_remote` | 远程同步 |
 | | `get_storage_status` | 存储状态 |
@@ -263,69 +236,32 @@ storage:
 # AI 分析
 ai_analysis:
   enabled: true
-  provider: "deepseek"       # deepseek | openai | gemini | custom
+  mode: "deepseek-chat"
   model: "deepseek-chat"
-  api_key: ""
-  push_mode: "both"          # only_analysis | both
+  max_news_for_analysis: 60
 ```
 
 ### 关键词配置（frequency_words.txt）
 
 **语法规则**：
 ```
-+必须关键词    # 必须包含（任一匹配即推送）
-普通关键词      # 普通匹配
--过滤关键词    # 排除包含此关键词的内容
-@全局过滤      # 全局过滤（适用于所有平台）
+[GLOBAL_FILTER]
+# 全局过滤词
+
+[WORD_GROUPS]
+# 词组定义，支持：
+# - 普通关键词
+# - /正则表达式/ => 别名
+# - [组别名]
+# - +必须关键词
+# - !排除关键词
+#   @限制条数
 ```
 
-**示例**：
-```
-+人工智能,AI
-机器学习,深度学习
--广告,软文
-@赌博,色情
-```
+## 运行与开发
 
-## 部署指南
+### 快速开始
 
-### 1. GitHub Actions 部署
-
-**适用场景**：免费托管、自动化运行
-
-**步骤**：
-1. Fork 项目到自己的 GitHub
-2. 配置 GitHub Secrets（webhook、API Key 等）
-3. 启用 Actions
-4. 设置定时任务（`.github/workflows/`）
-
-**优点**：完全免费、自动运行
-**缺点**：执行时间不稳定、有配额限制
-
-### 2. Docker 部署
-
-**适用场景**：个人服务器、稳定运行
-
-**步骤**：
-```bash
-# 拉取镜像
-docker pull ghcr.io/sansan0/trendradadar:latest
-
-# 运行容器
-docker run -d \
-  -v $(pwd)/config:/app/config \
-  -v $(pwd)/output:/app/output \
-  ghcr.io/sansan0/trendradadar:latest
-```
-
-**优点**：稳定可靠、精准定时
-**缺点**：需要服务器、需要维护
-
-### 3. 本地运行
-
-**适用场景**：开发测试、手动控制
-
-**步骤**：
 ```bash
 # 安装依赖
 pip install -e .
@@ -337,66 +273,7 @@ trendradar
 trendradar-mcp
 ```
 
-### 4. MCP 服务器部署
-
-**支持的客户端**：
-- Cherry Studio（推荐）
-- Claude Desktop
-- Cursor
-- Cline
-
-**安装脚本**：
-- Windows：`setup-windows.bat`
-- Mac：`setup-mac.sh`
-
-**HTTP 模式**（多客户端共享）：
-```bash
-./start-http.sh  # 启动 HTTP 服务器
-# URL: http://localhost:3333/mcp
-```
-
-## AI 集成说明
-
-### AI 分析功能
-
-**支持的 AI 提供商**：
-- DeepSeek（默认，性价比高）
-- OpenAI（GPT-4、o1）
-- Google Gemini
-- 自定义 OpenAI 兼容接口
-
-**分析内容**：
-- 热点趋势总结
-- 关键事件提取
-- 情感倾向分析
-- 行业影响评估
-
-**成本控制**：
-- `max_news_for_analysis`：限制分析新闻数量
-- 建议 GitHub Actions：0.1 元/天
-- 建议 Docker 部署：0.2 元/天
-
-### MCP 工具使用示例
-
-**在 Cherry Studio / Claude Desktop 中**：
-
-```
-用户: 帮我爬取最新的新闻
-AI: [调用 get_latest_news 工具]
-    返回最新热搜榜单...
-
-用户: 搜索最近3天关于"人工智能"的新闻
-AI: [调用 resolve_date_range + search_news 工具]
-    返回匹配的新闻列表...
-
-用户: 分析"iPhone"的热度趋势
-AI: [调用 analyze_topic_trend 工具]
-    返回趋势分析图表和数据...
-```
-
-## 开发指南
-
-### 本地开发环境
+### 开发环境设置
 
 ```bash
 # 克隆项目
@@ -409,123 +286,66 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # 安装依赖
 pip install -e .
-
-# 运行测试
-pytest
 ```
 
-### 添加新平台
+## 测试策略
 
-1. 在 `config/config.yaml` 添加平台配置
-2. 确认 NewsNow API 支持该平台
-3. 无需修改代码，自动支持
+**当前状态**：项目未配置测试框架
 
-### 添加新通知渠道
+**建议**：
+- 使用 `pytest` 进行单元测试
+- 测试覆盖重点：
+  - 核心分析算法 (`trendradar/core/analyzer.py`)
+  - 存储管理器 (`trendradar/storage/manager.py`)
+  - MCP 工具 (`mcp_server/tools/`)
+  - 通知发送器 (`trendradar/notification/senders.py`)
 
-1. 在 `trendradar/notification/senders.py` 实现发送器
-2. 在 `trendradar/notification/dispatcher.py` 注册渠道
-3. 在 `config/config.yaml` 添加配置项
+## 编码规范
 
-### 添加新 MCP 工具
+- **代码风格**：遵循 PEP 8 规范
+- **类型提示**：使用 Type Hints
+- **文档字符串**：使用 Docstrings
+- **中文注释**：关键逻辑使用中文注释
 
-1. 在 `mcp_server/tools/` 创建工具文件
-2. 使用 `@mcp_tool()` 装饰器注册
-3. 在 `mcp_server/server.py` 导入工具
+## AI 使用指引
 
-## 常见问题
+### 核心流程入口
 
-### Q1: 推送消息太长被截断？
-
-**A**: 启用消息分批功能
-```yaml
-notification:
-  channels:
-    feishu:
-      webhook_url: "url1;url2"  # 多账号分担
+```
+主流程: trendradar/__main__.py -> NewsAnalyzer.run()
+  ├─ 爬虫: trendradar/crawler/fetcher.py -> DataFetcher.crawl_websites()
+  ├─ 分析: trendradar/core/analyzer.py -> count_word_frequency()
+  ├─ 存储: trendradar/storage/manager.py -> StorageManager.save_news_data()
+  └─ 通知: trendradar/notification/dispatcher.py -> NotificationDispatcher.dispatch_all()
 ```
 
-### Q2: GitHub Actions 执行时间不稳定？
+### MCP 服务入口
 
-**A**: 扩大推送时间窗口
-```yaml
-notification:
-  push_window:
-    start: "20:00"
-    end: "23:00"  # 至少留足 2 小时
+```
+MCP 服务: mcp_server/server.py -> run_server()
+  ├─ 工具注册: mcp_server/server.py -> @mcp_tool()
+  ├─ 服务层: mcp_server/services/*.py
+  └─ 工具类: mcp_server/utils/*.py
 ```
 
-### Q3: MCP 服务无法连接？
+### 功能扩展
 
-**A**: 检查数据目录权限
-```bash
-chmod -R 755 output/
-```
+**添加新功能时**：
+1. 保持模块化设计
+2. 遵循单一职责原则
+3. 添加单元测试
+4. 更新配置文件
+5. 更新文档
 
-### Q4: AI 分析成本过高？
+### 代码导航
 
-**A**: 减少分析新闻数量
-```yaml
-ai_analysis:
-  max_news_for_analysis: 20  # 默认 50
-```
-
-### Q5: RSS 文章重复推送？
-
-**A**: 启用新鲜度过滤
-```yaml
-rss:
-  freshness_filter:
-    enabled: true
-    max_age_days: 3  # 只推送 3 天内文章
-```
-
-## 项目亮点
-
-### 1. 零技术门槛部署
-
-- 一键安装脚本（Windows/Mac）
-- Docker 一键启动
-- GitHub Actions 免费托管
-
-### 2. 智能推送策略
-
-- 三种推送模式适应不同场景
-- 关键词精准匹配
-- 增量监控避免重复
-
-### 3. AI 深度集成
-
-- MCP 协议支持多客户端
-- 丰富的分析工具集
-- 自然语言日期解析
-
-### 4. 灵活存储架构
-
-- 本地/远程自动切换
-- S3 兼容多云支持
-- 数据保留策略
-
-### 5. 多渠道推送
-
-- 8+ 主流通知渠道
-- 多账号负载均衡
-- 消息智能分批
-
-## 版本历史
-
-### v5.0.0（当前版本）
-- ✨ 集成 AI 模型，生成简报直推手机
-- ✨ 新增 RSS 订阅支持
-- ✨ 新增 AI 分析功能
-- ✨ 新增 MCP 协议支持
-- 🐛 修复若干问题
-
-### v4.7.0
-- ✨ 为 frequency_words.txt 新增更精确的新闻匹配语法
-- 🐛 修复若干问题
-
-### v4.6.0
-- ✨ 新增 display_mode 配置，支持按平台分组显示
+**关键类与函数**：
+- `AppContext`：应用上下文，封装所有依赖配置的操作
+- `NewsAnalyzer`：新闻分析器，主流程控制
+- `DataFetcher`：数据获取器，支持多平台爬取
+- `AIAnalyzer`：AI 分析器，基于 LiteLLM
+- `NotificationDispatcher`：通知调度器，统一多渠道推送
+- `StorageManager`：存储管理器，自动选择后端
 
 ## 相关资源
 
@@ -543,60 +363,38 @@ rss:
 ### 技术参考
 - [MCP 协议规范](https://modelcontextprotocol.io/)
 - [NewsNow API](https://www.newsnow.co.uk/)
-- [Cherry Studio](https://cherry-ai.com/)
+- [LiteLLM 文档](https://docs.litellm.ai/)
+- [FastMCP 文档](https://github.com/jlowin/fastmcp)
 
-## AI 使用建议
+## 版本历史
 
-### 代码导航
+### v5.5.2（当前版本）
+- 修复若干问题
+- 改进与特定 S3 兼容端点的兼容性
+- 添加二次开发与引用说明
+- 修复编辑 frequency_words.txt 产生的额外换行符问题
 
-**核心流程入口**：
-- 主流程：`trendradar/context.py` → `AppContext.run()`
-- 爬虫：`trendradar/crawler/fetcher.py` → `DataFetcher.fetch_all()`
-- 分析：`trendradar/core/analyzer.py` → `Analyzer.analyze()`
-- 通知：`trendradar/notification/dispatcher.py` → `NotificationDispatcher.dispatch_all()`
+### v5.0.0
+- 集成 AI 模型，生成简报直推手机
+- 新增 RSS 订阅支持
+- 新增 AI 分析功能
+- 新增 MCP 协议支持
 
-**MCP 服务入口**：
-- 服务启动：`mcp_server/server.py` → `run_server()`
-- 工具注册：`mcp_server/server.py` → `@mcp_tool()`
+## 变更记录 (Changelog)
 
-### 功能扩展
+### 2026-01-31 15:19:33
+- ✨ 初始化 AI 上下文文档系统
+- 📊 完成全仓扫描与模块识别
+- 📝 为 9 个模块生成详细文档
+- 🔗 添加导航面包屑支持
+- 📈 生成 Mermaid 结构图
+- 🎯 文档覆盖率达到 100%
 
-**添加新功能时**：
-1. 保持模块化设计
-2. 遵循单一职责原则
-3. 添加单元测试
-4. 更新配置文件
-5. 更新文档
-
-**代码风格**：
-- 遵循 PEP 8 规范
-- 使用中文注释
-- 类型提示（Type Hints）
-- 文档字符串（Docstrings）
-
-## 贡献指南
-
-### 提交 Issue
-
-1. 使用 Issue 模板
-2. 提供复现步骤
-3. 附上相关日志
-4. 说明环境信息
-
-### 提交 PR
-
-1. Fork 项目
-2. 创建功能分支
-3. 编写测试
-4. 提交 PR 并说明变更
-
-### 代码审查
-
-- 代码风格检查
-- 功能测试验证
-- 文档完整性
-- 向后兼容性
+### 2026-01-15
+- 📈 更新根级 CLAUDE.md 文档
+- 📝 完善核心功能模块说明
+- 🔧 更新技术栈信息
 
 ---
 
-*本文档由 AI 自动生成并维护，最后更新于 2026-01-15*
+*本文档由 AI 自动生成并维护，最后更新于 2026-01-31*
