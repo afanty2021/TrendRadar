@@ -3,64 +3,82 @@
 AI 分析器模块
 
 调用 AI 大模型对热点新闻进行深度分析
-支持 OpenAI、Google Gemini、Azure OpenAI 等兼容接口
+基于 LiteLLM 统一接口，支持 100+ AI 提供商
 """
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+from trendradar.ai.client import AIClient
 
 
 @dataclass
 class AIAnalysisResult:
     """AI 分析结果"""
-    summary: str = ""                    # 热点趋势概述
-    keyword_analysis: str = ""           # 关键词热度分析
-    sentiment: str = ""                  # 情感倾向分析
-    cross_platform: str = ""             # 跨平台关联
-    impact: str = ""                     # 潜在影响评估
-    signals: str = ""                    # 值得关注的信号
-    conclusion: str = ""                 # 总结与建议
+    # 新版 5 核心板块
+    core_trends: str = ""                # 核心热点与舆情态势
+    sentiment_controversy: str = ""      # 舆论风向与争议
+    signals: str = ""                    # 异动与弱信号
+    rss_insights: str = ""               # RSS 深度洞察
+    outlook_strategy: str = ""           # 研判与策略建议
+
+    # 基础元数据
     raw_response: str = ""               # 原始响应
     success: bool = False                # 是否成功
     error: str = ""                      # 错误信息
+
     # 新闻数量统计
     total_news: int = 0                  # 总新闻数（热榜+RSS）
     analyzed_news: int = 0               # 实际分析的新闻数
     max_news_limit: int = 0              # 分析上限配置值
     hotlist_count: int = 0               # 热榜新闻数
     rss_count: int = 0                   # RSS 新闻数
+    ai_mode: str = ""                    # AI 分析使用的模式 (daily/current/incremental)
 
 
 class AIAnalyzer:
     """AI 分析器"""
 
-    def __init__(self, config: Dict[str, Any], get_time_func: Callable):
+    def __init__(
+        self,
+        ai_config: Dict[str, Any],
+        analysis_config: Dict[str, Any],
+        get_time_func: Callable,
+        debug: bool = False,
+    ):
         """
         初始化 AI 分析器
 
         Args:
-            config: AI 分析配置
+            ai_config: AI 模型配置（LiteLLM 格式）
+            analysis_config: AI 分析功能配置（language, prompt_file 等）
             get_time_func: 获取当前时间的函数
+            debug: 是否开启调试模式
         """
-        self.config = config
+        self.ai_config = ai_config
+        self.analysis_config = analysis_config
         self.get_time_func = get_time_func
+        self.debug = debug
 
-        # 从配置或环境变量获取 API Key
-        self.api_key = config.get("API_KEY") or os.environ.get("AI_API_KEY", "")
-        self.provider = config.get("PROVIDER", "openai")
-        self.model = config.get("MODEL", "gpt-4o-mini")
-        self.base_url = config.get("BASE_URL", "")
-        self.timeout = config.get("TIMEOUT", 90)
-        self.max_news = config.get("MAX_NEWS_FOR_ANALYSIS", 50)
-        self.include_rss = config.get("INCLUDE_RSS", True)
-        self.push_mode = config.get("PUSH_MODE", "both")
+        # 创建 AI 客户端（基于 LiteLLM）
+        self.client = AIClient(ai_config)
+
+        # 验证配置
+        valid, error = self.client.validate_config()
+        if not valid:
+            print(f"[AI] 配置警告: {error}")
+
+        # 从分析配置获取功能参数
+        self.max_news = analysis_config.get("MAX_NEWS_FOR_ANALYSIS", 50)
+        self.include_rss = analysis_config.get("INCLUDE_RSS", True)
+        self.include_rank_timeline = analysis_config.get("INCLUDE_RANK_TIMELINE", False)
+        self.language = analysis_config.get("LANGUAGE", "Chinese")
 
         # 加载提示词模板
         self.system_prompt, self.user_prompt_template = self._load_prompt_template(
-            config.get("PROMPT_FILE", "ai_analysis_prompt.txt")
+            analysis_config.get("PROMPT_FILE", "ai_analysis_prompt.txt")
         )
 
     def _load_prompt_template(self, prompt_file: str) -> tuple:
@@ -117,17 +135,35 @@ class AIAnalyzer:
         Returns:
             AIAnalysisResult: 分析结果
         """
-        if not self.api_key:
+        
+        # 打印配置信息方便调试
+        model = self.ai_config.get("MODEL", "unknown")
+        api_key = self.client.api_key or ""
+        api_base = self.ai_config.get("API_BASE", "")
+        masked_key = f"{api_key[:5]}******" if len(api_key) >= 5 else "******"
+        model_display = model.replace("/", "/\u200b") if model else "unknown"
+
+        print(f"[AI] 模型: {model_display}")
+        print(f"[AI] Key : {masked_key}")
+
+        if api_base:
+            print(f"[AI] 接口: 存在自定义 API 端点")
+
+        timeout = self.ai_config.get("TIMEOUT", 120)
+        max_tokens = self.ai_config.get("MAX_TOKENS", 5000)
+        print(f"[AI] 参数: timeout={timeout}, max_tokens={max_tokens}")
+
+        if not self.client.api_key:
             return AIAnalysisResult(
                 success=False,
                 error="未配置 AI API Key，请在 config.yaml 或环境变量 AI_API_KEY 中设置"
             )
 
         # 准备新闻内容并获取统计数据
-        news_content, hotlist_total, rss_total, analyzed_count = self._prepare_news_content(stats, rss_stats)
+        news_content, rss_content, hotlist_total, rss_total, analyzed_count = self._prepare_news_content(stats, rss_stats)
         total_news = hotlist_total + rss_total
 
-        if not news_content:
+        if not news_content and not rss_content:
             return AIAnalysisResult(
                 success=False,
                 error="没有可分析的新闻内容",
@@ -155,11 +191,29 @@ class AIAnalyzer:
         user_prompt = user_prompt.replace("{platforms}", ", ".join(platforms) if platforms else "多平台")
         user_prompt = user_prompt.replace("{keywords}", ", ".join(keywords[:20]) if keywords else "无")
         user_prompt = user_prompt.replace("{news_content}", news_content)
+        user_prompt = user_prompt.replace("{rss_content}", rss_content)
+        user_prompt = user_prompt.replace("{language}", self.language)
 
-        # 调用 AI API
+        if self.debug:
+            print("\n" + "=" * 80)
+            print("[AI 调试] 发送给 AI 的完整提示词")
+            print("=" * 80)
+            if self.system_prompt:
+                print("\n--- System Prompt ---")
+                print(self.system_prompt)
+            print("\n--- User Prompt ---")
+            print(user_prompt)
+            print("=" * 80 + "\n")
+
+        # 调用 AI API（使用 LiteLLM）
         try:
-            response = self._call_ai_api(user_prompt)
+            response = self._call_ai(user_prompt)
             result = self._parse_response(response)
+
+            # 如果配置未启用 RSS 分析，强制清空 AI 返回的 RSS 洞察
+            if not self.include_rss:
+                result.rss_insights = ""
+
             # 填充统计数据
             result.total_news = total_news
             result.hotlist_count = hotlist_total
@@ -168,30 +222,13 @@ class AIAnalyzer:
             result.max_news_limit = self.max_news
             return result
         except Exception as e:
-            import requests
             error_type = type(e).__name__
             error_msg = str(e)
 
-            # 针对不同错误类型提供更友好的提示
-            if isinstance(e, requests.exceptions.Timeout):
-                friendly_msg = f"AI API 请求超时（{self.timeout}秒），请检查网络或增加超时时间"
-            elif isinstance(e, requests.exceptions.ConnectionError):
-                friendly_msg = f"无法连接到 AI API ({self.base_url or self.provider})，请检查网络和 API 地址"
-            elif isinstance(e, requests.exceptions.HTTPError):
-                status_code = e.response.status_code if hasattr(e, 'response') and e.response else "未知"
-                if status_code == 401:
-                    friendly_msg = "AI API 认证失败，请检查 API Key 是否正确"
-                elif status_code == 429:
-                    friendly_msg = "AI API 请求频率过高，请稍后重试"
-                elif status_code == 500:
-                    friendly_msg = "AI API 服务器内部错误，请稍后重试"
-                else:
-                    friendly_msg = f"AI API 返回错误 (HTTP {status_code}): {error_msg[:100]}"
-            else:
-                # 截断过长的错误消息
-                if len(error_msg) > 150:
-                    error_msg = error_msg[:150] + "..."
-                friendly_msg = f"AI 分析失败 ({error_type}): {error_msg}"
+            # 截断过长的错误消息
+            if len(error_msg) > 200:
+                error_msg = error_msg[:200] + "..."
+            friendly_msg = f"AI 分析失败 ({error_type}): {error_msg}"
 
             return AIAnalysisResult(
                 success=False,
@@ -210,10 +247,12 @@ class AIAnalyzer:
         RSS 包含：来源、标题、发布时间
 
         Returns:
-            tuple: (content_str, hotlist_total, rss_total, analyzed_count)
+            tuple: (news_content, rss_content, hotlist_total, rss_total, analyzed_count)
         """
-        lines = []
-        count = 0
+        news_lines = []
+        rss_lines = []
+        news_count = 0
+        rss_count = 0
 
         # 计算总新闻数
         hotlist_total = sum(len(s.get("titles", [])) for s in stats) if stats else 0
@@ -221,13 +260,11 @@ class AIAnalyzer:
 
         # 热榜内容
         if stats:
-            lines.append("### 热榜新闻")
-            lines.append("格式: [来源] 标题 | 排名:最高-最低 | 时间:首次~末次 | 出现:N次")
             for stat in stats:
                 word = stat.get("word", "")
                 titles = stat.get("titles", [])
                 if word and titles:
-                    lines.append(f"\n**{word}** ({len(titles)}条)")
+                    news_lines.append(f"\n**{word}** ({len(titles)}条)")
                     for t in titles:
                         if not isinstance(t, dict):
                             continue
@@ -238,7 +275,13 @@ class AIAnalyzer:
                         # 来源
                         source = t.get("source_name", t.get("source", ""))
 
-                        # 排名范围
+                        # 构建行
+                        if source:
+                            line = f"- [{source}] {title}"
+                        else:
+                            line = f"- {title}"
+
+                        # 始终显示简化格式：排名范围 + 时间范围 + 出现次数
                         ranks = t.get("ranks", [])
                         if ranks:
                             min_rank = min(ranks)
@@ -247,37 +290,38 @@ class AIAnalyzer:
                         else:
                             rank_str = "-"
 
-                        # 时间范围（简化显示）
                         first_time = t.get("first_time", "")
                         last_time = t.get("last_time", "")
                         time_str = self._format_time_range(first_time, last_time)
 
-                        # 出现次数
                         appear_count = t.get("count", 1)
 
-                        # 构建行：[来源] 标题 | 排名:X-Y | 时间:首次~末次 | 出现:N次
-                        if source:
-                            line = f"- [{source}] {title}"
-                        else:
-                            line = f"- {title}"
                         line += f" | 排名:{rank_str} | 时间:{time_str} | 出现:{appear_count}次"
-                        lines.append(line)
 
-                        count += 1
-                        if count >= self.max_news:
+                        # 开启完整时间线时，额外添加轨迹
+                        if self.include_rank_timeline:
+                            rank_timeline = t.get("rank_timeline", [])
+                            timeline_str = self._format_rank_timeline(rank_timeline)
+                            line += f" | 轨迹:{timeline_str}"
+
+                        news_lines.append(line)
+
+                        news_count += 1
+                        if news_count >= self.max_news:
                             break
-                if count >= self.max_news:
+                if news_count >= self.max_news:
                     break
 
-        # RSS 内容（仅在启用时提交）
-        if self.include_rss and rss_stats and count < self.max_news:
-            lines.append("\n### RSS 订阅")
-            lines.append("格式: [来源] 标题 | 发布时间")
+        # RSS 内容（仅在启用时构建）
+        if self.include_rss and rss_stats:
+            remaining = self.max_news - news_count
             for stat in rss_stats:
+                if rss_count >= remaining:
+                    break
                 word = stat.get("word", "")
                 titles = stat.get("titles", [])
                 if word and titles:
-                    lines.append(f"\n**{word}** ({len(titles)}条)")
+                    rss_lines.append(f"\n**{word}** ({len(titles)}条)")
                     for t in titles:
                         if not isinstance(t, dict):
                             continue
@@ -298,15 +342,26 @@ class AIAnalyzer:
                             line = f"- {title}"
                         if time_display:
                             line += f" | {time_display}"
-                        lines.append(line)
+                        rss_lines.append(line)
 
-                        count += 1
-                        if count >= self.max_news:
+                        rss_count += 1
+                        if rss_count >= remaining:
                             break
-                if count >= self.max_news:
-                    break
 
-        return "\n".join(lines), hotlist_total, rss_total, count
+        news_content = "\n".join(news_lines) if news_lines else ""
+        rss_content = "\n".join(rss_lines) if rss_lines else ""
+        total_count = news_count + rss_count
+
+        return news_content, rss_content, hotlist_total, rss_total, total_count
+
+    def _call_ai(self, user_prompt: str) -> str:
+        """调用 AI API（使用 LiteLLM）"""
+        messages = []
+        if self.system_prompt:
+            messages.append({"role": "system", "content": self.system_prompt})
+        messages.append({"role": "user", "content": user_prompt})
+
+        return self.client.chat(messages)
 
     def _format_time_range(self, first_time: str, last_time: str) -> str:
         """格式化时间范围（简化显示，只保留时分）"""
@@ -314,7 +369,6 @@ class AIAnalyzer:
             if not time_str:
                 return "-"
             # 尝试提取 HH:MM 部分
-            # 格式可能是 "2026-01-04 12:30:00" 或 "12:30" 等
             if " " in time_str:
                 parts = time_str.split(" ")
                 if len(parts) >= 2:
@@ -323,7 +377,11 @@ class AIAnalyzer:
                         return time_part[:5]  # HH:MM
             elif ":" in time_str:
                 return time_str[:5]
-            return time_str[:5] if len(time_str) >= 5 else time_str
+            # 处理 HH-MM 格式
+            result = time_str[:5] if len(time_str) >= 5 else time_str
+            if len(result) == 5 and result[2] == '-':
+                result = result.replace('-', ':')
+            return result
 
         first = extract_time(first_time)
         last = extract_time(last_time)
@@ -332,107 +390,23 @@ class AIAnalyzer:
             return first
         return f"{first}~{last}"
 
-    def _call_ai_api(self, user_prompt: str) -> str:
-        """调用 AI API"""
-        if self.provider == "gemini":
-            return self._call_gemini(user_prompt)
-        return self._call_openai_compatible(user_prompt)
+    def _format_rank_timeline(self, rank_timeline: List[Dict]) -> str:
+        """格式化排名时间线"""
+        if not rank_timeline:
+            return "-"
 
-    def _get_api_url(self) -> str:
-        """获取完整 API URL"""
-        if self.base_url:
-            return self.base_url
+        parts = []
+        for item in rank_timeline:
+            time_str = item.get("time", "")
+            if len(time_str) == 5 and time_str[2] == '-':
+                time_str = time_str.replace('-', ':')
+            rank = item.get("rank")
+            if rank is None:
+                parts.append(f"0({time_str})")
+            else:
+                parts.append(f"{rank}({time_str})")
 
-        # 预设完整端点
-        urls = {
-            "deepseek": "https://api.deepseek.com/v1/chat/completions",
-            "openai": "https://api.openai.com/v1/chat/completions",
-        }
-        url = urls.get(self.provider)
-        if not url:
-            raise ValueError(f"{self.provider} 需要配置 base_url（完整 API 地址）")
-        return url
-
-    def _call_openai_compatible(self, user_prompt: str) -> str:
-        """调用 OpenAI 兼容接口"""
-        import requests
-
-        url = self._get_api_url()
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        messages = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
-        messages.append({"role": "user", "content": user_prompt})
-
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 2000,
-        }
-
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
-
-    def _call_gemini(self, user_prompt: str) -> str:
-        """调用 Google Gemini API"""
-        import requests
-
-        # Gemini API URL 格式: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
-        model = self.model or "gemini-1.5-flash"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
-
-        headers = {
-            "Content-Type": "application/json",
-        }
-
-        # 构建 Gemini 格式的消息
-        contents = []
-        if self.system_prompt:
-            contents.append({
-                "role": "user",
-                "parts": [{"text": f"System instruction: {self.system_prompt}"}]
-            })
-            contents.append({
-                "role": "model",
-                "parts": [{"text": "Understood. I will follow these instructions."}]
-            })
-        contents.append({
-            "role": "user",
-            "parts": [{"text": user_prompt}]
-        })
-
-        payload = {
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 2000,
-            }
-        }
-
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        return "→".join(parts)
 
     def _parse_response(self, response: str) -> AIAnalysisResult:
         """解析 AI 响应"""
@@ -442,62 +416,53 @@ class AIAnalyzer:
             result.error = "AI 返回空响应"
             return result
 
-        # 尝试解析 JSON
         try:
-            # 提取 JSON 部分
             json_str = response
 
-            # 尝试提取 ```json ... ``` 代码块
             if "```json" in response:
                 parts = response.split("```json", 1)
                 if len(parts) > 1:
                     code_block = parts[1]
-                    # 查找结束的 ```
                     end_idx = code_block.find("```")
                     if end_idx != -1:
                         json_str = code_block[:end_idx]
                     else:
-                        json_str = code_block  # 没有结束标记，使用剩余内容
-            # 尝试提取 ``` ... ``` 代码块
+                        json_str = code_block
             elif "```" in response:
-                parts = response.split("```", 2)  # 最多分割2次
+                parts = response.split("```", 2)
                 if len(parts) >= 2:
                     json_str = parts[1]
 
-            # 清理 JSON 字符串
             json_str = json_str.strip()
             if not json_str:
                 raise ValueError("提取的 JSON 内容为空")
 
             data = json.loads(json_str)
 
-            result.summary = data.get("summary", "")
-            result.keyword_analysis = data.get("keyword_analysis", "")
-            result.sentiment = data.get("sentiment", "")
-            result.cross_platform = data.get("cross_platform", "")
-            result.impact = data.get("impact", "")
+            # 新版字段解析
+            result.core_trends = data.get("core_trends", "")
+            result.sentiment_controversy = data.get("sentiment_controversy", "")
             result.signals = data.get("signals", "")
-            result.conclusion = data.get("conclusion", "")
+            result.rss_insights = data.get("rss_insights", "")
+            result.outlook_strategy = data.get("outlook_strategy", "")
+            
             result.success = True
 
         except json.JSONDecodeError as e:
-            # JSON 解析失败，记录详细错误但仍使用原始文本
             error_context = json_str[max(0, e.pos - 30):e.pos + 30] if json_str and e.pos else ""
             result.error = f"JSON 解析错误 (位置 {e.pos}): {e.msg}"
             if error_context:
                 result.error += f"，上下文: ...{error_context}..."
-            # 使用原始响应作为 summary
-            result.summary = response[:1000] if len(response) > 1000 else response
-            result.success = True  # 仍标记为成功，因为有内容可展示
+            # 使用原始响应填充 core_trends，确保有输出
+            result.core_trends = response[:500] + "..." if len(response) > 500 else response
+            result.success = True
         except (IndexError, KeyError, TypeError, ValueError) as e:
-            # 其他解析错误
             result.error = f"响应解析错误: {type(e).__name__}: {str(e)}"
-            result.summary = response[:1000] if len(response) > 1000 else response
+            result.core_trends = response[:500] if len(response) > 500 else response
             result.success = True
         except Exception as e:
-            # 未知错误
             result.error = f"解析时发生未知错误: {type(e).__name__}: {str(e)}"
-            result.summary = response[:1000] if len(response) > 1000 else response
+            result.core_trends = response[:500] if len(response) > 500 else response
             result.success = True
 
         return result

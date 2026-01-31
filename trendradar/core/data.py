@@ -126,6 +126,7 @@ def read_all_today_titles_from_storage(
                 first_time = getattr(item, 'first_time', item.crawl_time)
                 last_time = getattr(item, 'last_time', item.crawl_time)
                 count = getattr(item, 'count', 1)
+                rank_timeline = getattr(item, 'rank_timeline', [])
 
                 all_results[source_id][title] = {
                     "ranks": ranks,
@@ -140,6 +141,7 @@ def read_all_today_titles_from_storage(
                     "ranks": ranks,
                     "url": item.url or "",
                     "mobileUrl": item.mobile_url or "",
+                    "rank_timeline": rank_timeline,
                 }
 
         return all_results, final_id_to_name, title_info
@@ -237,10 +239,12 @@ def detect_latest_new_titles_from_storage(
                     historical_titles[source_id].add(item.title)
 
         # 检查是否是当天第一次抓取（没有任何历史标题）
-        # 如果所有平台的历史标题集合都为空，说明只有一个抓取批次，不应该有"新增"标题
+        # 如果所有平台的历史标题集合都为空，说明只有一个抓取批次
+        # 在这种情况下，将所有最新批次的标题视为"新增"（用于增量模式的第一次推送）
         has_historical_data = any(len(titles) > 0 for titles in historical_titles.values())
         if not has_historical_data:
-            return {}
+            # 第一次爬取：返回所有最新标题作为"新增"
+            return latest_titles
 
         # 步骤3：找出新增标题 = 最新批次标题 - 历史标题
         new_titles = {}
@@ -283,23 +287,3 @@ def detect_latest_new_titles(
         total_new = sum(len(titles) for titles in new_titles.values())
         print(f"[存储] 从存储后端检测到 {total_new} 条新增标题")
     return new_titles
-
-
-def is_first_crawl_today(output_dir: str, date_folder: str) -> bool:
-    """
-    检测是否是当天第一次爬取
-
-    Args:
-        output_dir: 输出目录
-        date_folder: 日期文件夹名称
-
-    Returns:
-        bool: 是否是当天第一次爬取
-    """
-    txt_dir = Path(output_dir) / date_folder / "txt"
-
-    if not txt_dir.exists():
-        return True
-
-    files = sorted([f for f in txt_dir.iterdir() if f.suffix == ".txt"])
-    return len(files) <= 1
