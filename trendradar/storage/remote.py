@@ -28,9 +28,10 @@ except ImportError:
     BotoConfig = None
     ClientError = Exception
 
-from trendradar.storage.base import StorageBackend, NewsItem, NewsData, RSSItem, RSSData
+from trendradar.storage.base import StorageBackend, NewsData, RSSItem, RSSData
 from trendradar.storage.sqlite_mixin import SQLiteStorageMixin
 from trendradar.utils.time import (
+    DEFAULT_TIMEZONE,
     get_configured_time,
     format_date_folder,
     format_time_filename,
@@ -60,7 +61,7 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
         enable_txt: bool = False,  # 远程模式默认不生成 TXT
         enable_html: bool = True,
         temp_dir: Optional[str] = None,
-        timezone: str = "Asia/Shanghai",
+        timezone: str = DEFAULT_TIMEZONE,
     ):
         """
         初始化远程存储后端
@@ -74,7 +75,7 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
             enable_txt: 是否启用 TXT 快照（默认关闭）
             enable_html: 是否启用 HTML 报告
             temp_dir: 临时目录路径（默认使用系统临时目录）
-            timezone: 时区配置（默认 Asia/Shanghai）
+            timezone: 时区配置
         """
         if not HAS_BOTO3:
             raise ImportError("远程存储后端需要安装 boto3: pip install boto3")
@@ -117,6 +118,10 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
         # 跟踪下载的文件（用于清理）
         self._downloaded_files: List[Path] = []
         self._db_connections: Dict[str, sqlite3.Connection] = {}
+
+        # 批量模式：延迟上传，避免频繁上传同一文件
+        self._batch_mode = False
+        self._batch_dirty: set = set()  # 待上传的 (date, db_type) 集合
 
         print(f"[远程存储] 初始化完成，存储桶: {bucket_name}，签名版本: {signature_version}")
 
@@ -247,9 +252,23 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
             print(f"[远程存储] 下载异常: {e}")
             raise
 
+    def begin_batch(self):
+        """开启批量模式：延迟上传，避免频繁上传同一文件"""
+        self._batch_mode = True
+        self._batch_dirty.clear()
+
+    def end_batch(self):
+        """结束批量模式：统一上传所有脏数据库"""
+        self._batch_mode = False
+        for date, db_type in self._batch_dirty:
+            self._upload_sqlite(date, db_type)
+        self._batch_dirty.clear()
+
     def _upload_sqlite(self, date: Optional[str] = None, db_type: str = "news") -> bool:
         """
         上传本地 SQLite 文件到远程存储
+
+        批量模式下延迟上传，由 end_batch() 统一触发。
 
         Args:
             date: 日期字符串
@@ -258,6 +277,9 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
         Returns:
             是否上传成功
         """
+        if self._batch_mode:
+            self._batch_dirty.add((date, db_type))
+            return True
         local_path = self._get_local_db_path(date, db_type)
         r2_key = self._get_remote_db_key(date, db_type)
 
@@ -393,46 +415,28 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
         """检查是否是当天第一次抓取"""
         return self._is_first_crawl_today_impl(date)
 
-    def has_pushed_today(self, date: Optional[str] = None) -> bool:
-        """检查指定日期是否已推送过"""
-        return self._has_pushed_today_impl(date)
+    # ========================================
+    # 时间段执行记录（调度系统）
+    # ========================================
 
-    def record_push(self, report_type: str, date: Optional[str] = None) -> bool:
-        """记录推送"""
-        success = self._record_push_impl(report_type, date)
+    def has_period_executed(self, date_str: str, period_key: str, action: str) -> bool:
+        """检查指定时间段的某个 action 是否已执行"""
+        return self._has_period_executed_impl(date_str, period_key, action)
 
-        if success:
-            now_str = self._get_configured_time().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[远程存储] 推送记录已保存: {report_type} at {now_str}")
-
-            # 上传到远程存储 确保记录持久化
-            if self._upload_sqlite(date):
-                print(f"[远程存储] 推送记录已同步到远程存储")
-                return True
-            else:
-                print(f"[远程存储] 推送记录同步到远程存储失败")
-                return False
-
-        return False
-
-    def has_ai_analyzed_today(self, date: Optional[str] = None) -> bool:
-        """检查指定日期是否已进行过 AI 分析"""
-        return self._has_ai_analyzed_today_impl(date)
-
-    def record_ai_analysis(self, analysis_mode: str, date: Optional[str] = None) -> bool:
-        """记录 AI 分析"""
-        success = self._record_ai_analysis_impl(analysis_mode, date)
+    def record_period_execution(self, date_str: str, period_key: str, action: str) -> bool:
+        """记录时间段的 action 执行"""
+        success = self._record_period_execution_impl(date_str, period_key, action)
 
         if success:
             now_str = self._get_configured_time().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[远程存储] AI 分析记录已保存: {analysis_mode} at {now_str}")
+            print(f"[远程存储] 时间段执行记录已保存: {period_key}/{action} at {now_str}")
 
-            # 上传到远程存储 确保记录持久化
-            if self._upload_sqlite(date):
-                print(f"[远程存储] AI 分析记录已同步到远程存储")
+            # 上传到远程存储确保记录持久化
+            if self._upload_sqlite(date_str):
+                print(f"[远程存储] 时间段执行记录已同步到远程存储")
                 return True
             else:
-                print(f"[远程存储] AI 分析记录同步到远程存储失败")
+                print(f"[远程存储] 时间段执行记录同步到远程存储失败")
                 return False
 
         return False
@@ -477,6 +481,91 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
     def get_latest_rss_data(self, date: Optional[str] = None) -> Optional[RSSData]:
         """获取最新一次抓取的 RSS 数据"""
         return self._get_latest_rss_data_impl(date)
+
+    # ========================================
+    # AI 智能筛选存储方法
+    # ========================================
+
+    def get_active_ai_filter_tags(self, date=None, interests_file="ai_interests.txt"):
+        return self._get_active_tags_impl(date, interests_file)
+
+    def get_latest_prompt_hash(self, date=None, interests_file="ai_interests.txt"):
+        return self._get_latest_prompt_hash_impl(date, interests_file)
+
+    def get_latest_ai_filter_tag_version(self, date=None):
+        return self._get_latest_tag_version_impl(date)
+
+    def deprecate_all_ai_filter_tags(self, date=None, interests_file="ai_interests.txt"):
+        count = self._deprecate_all_tags_impl(date, interests_file)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def save_ai_filter_tags(self, tags, version, prompt_hash, date=None, interests_file="ai_interests.txt"):
+        count = self._save_tags_impl(date, tags, version, prompt_hash, interests_file)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def save_ai_filter_results(self, results, date=None):
+        count = self._save_filter_results_impl(date, results)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def get_active_ai_filter_results(self, date=None, interests_file="ai_interests.txt"):
+        return self._get_active_filter_results_impl(date, interests_file)
+
+    def deprecate_specific_ai_filter_tags(self, tag_ids, date=None):
+        count = self._deprecate_specific_tags_impl(date, tag_ids)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def update_ai_filter_tags_hash(self, interests_file, new_hash, date=None):
+        count = self._update_tags_hash_impl(date, interests_file, new_hash)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def update_ai_filter_tag_descriptions(self, tag_updates, date=None, interests_file="ai_interests.txt"):
+        count = self._update_tag_descriptions_impl(date, tag_updates, interests_file)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def update_ai_filter_tag_priorities(self, tag_priorities, date=None, interests_file="ai_interests.txt"):
+        count = self._update_tag_priorities_impl(date, tag_priorities, interests_file)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def save_analyzed_news(self, news_ids, source_type, interests_file, prompt_hash, matched_ids, date=None):
+        count = self._save_analyzed_news_impl(date, news_ids, source_type, interests_file, prompt_hash, matched_ids)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def get_analyzed_news_ids(self, source_type="hotlist", date=None, interests_file="ai_interests.txt"):
+        return self._get_analyzed_news_ids_impl(date, source_type, interests_file)
+
+    def clear_analyzed_news(self, date=None, interests_file="ai_interests.txt"):
+        count = self._clear_analyzed_news_impl(date, interests_file)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def clear_unmatched_analyzed_news(self, date=None, interests_file="ai_interests.txt"):
+        count = self._clear_unmatched_analyzed_news_impl(date, interests_file)
+        if count > 0:
+            self._upload_sqlite(date)
+        return count
+
+    def get_all_news_ids(self, date=None):
+        return self._get_all_news_ids_impl(date)
+
+    def get_all_rss_ids(self, date=None):
+        return self._get_all_rss_ids_impl(date)
 
     # ========================================
     # 远程特有功能：TXT/HTML 快照（临时目录）
@@ -528,7 +617,7 @@ class RemoteStorageBackend(SQLiteStorageMixin, StorageBackend):
             print(f"[远程存储] 保存 TXT 快照失败: {e}")
             return None
 
-    def save_html_report(self, html_content: str, filename: str, is_summary: bool = False) -> Optional[str]:
+    def save_html_report(self, html_content: str, filename: str) -> Optional[str]:
         """保存 HTML 报告到临时目录"""
         if not self.enable_html:
             return None

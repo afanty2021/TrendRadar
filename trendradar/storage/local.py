@@ -13,9 +13,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from trendradar.storage.base import StorageBackend, NewsItem, NewsData, RSSItem, RSSData
+from trendradar.storage.base import StorageBackend, NewsData, RSSItem, RSSData
 from trendradar.storage.sqlite_mixin import SQLiteStorageMixin
 from trendradar.utils.time import (
+    DEFAULT_TIMEZONE,
     get_configured_time,
     format_date_folder,
     format_time_filename,
@@ -37,7 +38,7 @@ class LocalStorageBackend(SQLiteStorageMixin, StorageBackend):
         data_dir: str = "output",
         enable_txt: bool = True,
         enable_html: bool = True,
-        timezone: str = "Asia/Shanghai",
+        timezone: str = DEFAULT_TIMEZONE,
     ):
         """
         初始化本地存储后端
@@ -46,7 +47,7 @@ class LocalStorageBackend(SQLiteStorageMixin, StorageBackend):
             data_dir: 数据目录路径
             enable_txt: 是否启用 TXT 快照
             enable_html: 是否启用 HTML 报告
-            timezone: 时区配置（默认 Asia/Shanghai）
+            timezone: 时区配置
         """
         self.data_dir = Path(data_dir)
         self.enable_txt = enable_txt
@@ -178,28 +179,20 @@ class LocalStorageBackend(SQLiteStorageMixin, StorageBackend):
             return []
         return self._get_crawl_times_impl(date)
 
-    def has_pushed_today(self, date: Optional[str] = None) -> bool:
-        """检查指定日期是否已推送过"""
-        return self._has_pushed_today_impl(date)
+    # ========================================
+    # 时间段执行记录（调度系统）
+    # ========================================
 
-    def record_push(self, report_type: str, date: Optional[str] = None) -> bool:
-        """记录推送"""
-        success = self._record_push_impl(report_type, date)
+    def has_period_executed(self, date_str: str, period_key: str, action: str) -> bool:
+        """检查指定时间段的某个 action 是否已执行"""
+        return self._has_period_executed_impl(date_str, period_key, action)
+
+    def record_period_execution(self, date_str: str, period_key: str, action: str) -> bool:
+        """记录时间段的 action 执行"""
+        success = self._record_period_execution_impl(date_str, period_key, action)
         if success:
             now_str = self._get_configured_time().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[本地存储] 推送记录已保存: {report_type} at {now_str}")
-        return success
-
-    def has_ai_analyzed_today(self, date: Optional[str] = None) -> bool:
-        """检查指定日期是否已进行过 AI 分析"""
-        return self._has_ai_analyzed_today_impl(date)
-
-    def record_ai_analysis(self, analysis_mode: str, date: Optional[str] = None) -> bool:
-        """记录 AI 分析"""
-        success = self._record_ai_analysis_impl(analysis_mode, date)
-        if success:
-            now_str = self._get_configured_time().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[本地存储] AI 分析记录已保存: {analysis_mode} at {now_str}")
+            print(f"[本地存储] 时间段执行记录已保存: {period_key}/{action} at {now_str}")
         return success
 
     # ========================================
@@ -233,6 +226,61 @@ class LocalStorageBackend(SQLiteStorageMixin, StorageBackend):
         if not db_path.exists():
             return None
         return self._get_latest_rss_data_impl(date)
+
+    # ========================================
+    # AI 智能筛选
+    # ========================================
+
+    def get_active_ai_filter_tags(self, date=None, interests_file="ai_interests.txt"):
+        return self._get_active_tags_impl(date, interests_file)
+
+    def get_latest_prompt_hash(self, date=None, interests_file="ai_interests.txt"):
+        return self._get_latest_prompt_hash_impl(date, interests_file)
+
+    def get_latest_ai_filter_tag_version(self, date=None):
+        return self._get_latest_tag_version_impl(date)
+
+    def deprecate_all_ai_filter_tags(self, date=None, interests_file="ai_interests.txt"):
+        return self._deprecate_all_tags_impl(date, interests_file)
+
+    def save_ai_filter_tags(self, tags, version, prompt_hash, date=None, interests_file="ai_interests.txt"):
+        return self._save_tags_impl(date, tags, version, prompt_hash, interests_file)
+
+    def save_ai_filter_results(self, results, date=None):
+        return self._save_filter_results_impl(date, results)
+
+    def get_active_ai_filter_results(self, date=None, interests_file="ai_interests.txt"):
+        return self._get_active_filter_results_impl(date, interests_file)
+
+    def deprecate_specific_ai_filter_tags(self, tag_ids, date=None):
+        return self._deprecate_specific_tags_impl(date, tag_ids)
+
+    def update_ai_filter_tags_hash(self, interests_file, new_hash, date=None):
+        return self._update_tags_hash_impl(date, interests_file, new_hash)
+
+    def update_ai_filter_tag_descriptions(self, tag_updates, date=None, interests_file="ai_interests.txt"):
+        return self._update_tag_descriptions_impl(date, tag_updates, interests_file)
+
+    def update_ai_filter_tag_priorities(self, tag_priorities, date=None, interests_file="ai_interests.txt"):
+        return self._update_tag_priorities_impl(date, tag_priorities, interests_file)
+
+    def save_analyzed_news(self, news_ids, source_type, interests_file, prompt_hash, matched_ids, date=None):
+        return self._save_analyzed_news_impl(date, news_ids, source_type, interests_file, prompt_hash, matched_ids)
+
+    def get_analyzed_news_ids(self, source_type="hotlist", date=None, interests_file="ai_interests.txt"):
+        return self._get_analyzed_news_ids_impl(date, source_type, interests_file)
+
+    def clear_analyzed_news(self, date=None, interests_file="ai_interests.txt"):
+        return self._clear_analyzed_news_impl(date, interests_file)
+
+    def clear_unmatched_analyzed_news(self, date=None, interests_file="ai_interests.txt"):
+        return self._clear_unmatched_analyzed_news_impl(date, interests_file)
+
+    def get_all_news_ids(self, date=None):
+        return self._get_all_news_ids_impl(date)
+
+    def get_all_rss_ids(self, date=None):
+        return self._get_all_rss_ids_impl(date)
 
     # ========================================
     # 本地特有功能：TXT/HTML 快照
@@ -296,7 +344,7 @@ class LocalStorageBackend(SQLiteStorageMixin, StorageBackend):
             print(f"[本地存储] 保存 TXT 快照失败: {e}")
             return None
 
-    def save_html_report(self, html_content: str, filename: str, is_summary: bool = False) -> Optional[str]:
+    def save_html_report(self, html_content: str, filename: str) -> Optional[str]:
         """
         保存 HTML 报告
 
@@ -305,7 +353,6 @@ class LocalStorageBackend(SQLiteStorageMixin, StorageBackend):
         Args:
             html_content: HTML 内容
             filename: 文件名
-            is_summary: 是否为汇总报告
 
         Returns:
             保存的文件路径
